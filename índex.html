@@ -1,1 +1,477 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bolhas do Sistema Reprodutor</title>
 
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Arial, sans-serif;
+  background:linear-gradient(160deg,#ffd6ec,#d7f3ff,#e8ddff);
+  overflow:hidden;
+}
+#game{
+  position:relative;
+  width:100vw;
+  height:100vh;
+}
+canvas{
+  display:block;
+}
+#hud{
+  position:absolute;
+  top:15px;
+  left:15px;
+  right:15px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  z-index:5;
+  color:#5b3b79;
+  font-weight:bold;
+}
+.card{
+  background:rgba(255,255,255,.75);
+  padding:10px 16px;
+  border-radius:18px;
+  box-shadow:0 8px 20px rgba(0,0,0,.12);
+}
+#info{
+  position:absolute;
+  bottom:15px;
+  left:50%;
+  transform:translateX(-50%);
+  background:rgba(255,255,255,.82);
+  padding:12px 18px;
+  border-radius:22px;
+  color:#5b3b79;
+  text-align:center;
+  width:min(90%,520px);
+  z-index:5;
+}
+button{
+  border:0;
+  padding:10px 16px;
+  border-radius:18px;
+  background:#ff8fcf;
+  color:white;
+  font-weight:bold;
+  cursor:pointer;
+}
+button:hover{background:#ff63bb}
+</style>
+</head>
+
+<body>
+<div id="game">
+  <div id="hud">
+    <div class="card">💖 Pontos: <span id="score">0</span></div>
+    <div class="card">🎯 Bolha: <span id="nextLabel">Ovário</span></div>
+    <button onclick="restart()">Reiniciar</button>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <div id="info">
+    💡 Mire com o mouse ou dedo e solte para lançar.  
+    Junte 3 bolhas iguais para “bombear” conhecimento!
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const scoreEl = document.getElementById("score");
+const nextLabelEl = document.getElementById("nextLabel");
+
+let W, H;
+function resize(){
+  W = canvas.width = innerWidth;
+  H = canvas.height = innerHeight;
+}
+resize();
+addEventListener("resize", resize);
+
+const R = 28;
+const ROWS = 7;
+const COLS = 10;
+const startY = 95;
+
+const types = [
+  {name:"Ovário", color:"#ff8fcf", icon:"🌸"},
+  {name:"Útero", color:"#ffb36b", icon:"💗"},
+  {name:"Testículo", color:"#8fd3ff", icon:"🔵"},
+  {name:"Espermatozoide", color:"#b99cff", icon:"✨"},
+  {name:"Óvulo", color:"#fff07a", icon:"🥚"},
+  {name:"Hormônio", color:"#8ff0c6", icon:"⚡"}
+];
+
+let bubbles = [];
+let shooter;
+let aim = {x:W/2, y:H/2};
+let score = 0;
+let particles = [];
+
+function randomType(){
+  return Math.floor(Math.random()*types.length);
+}
+
+function gridX(row,col){
+  const offset = row % 2 ? R : 0;
+  return W/2 - COLS*R + col*R*2 + R + offset;
+}
+
+function gridY(row){
+  return startY + row * R * 1.72;
+}
+
+function init(){
+  bubbles = [];
+  score = 0;
+  particles = [];
+
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      if(Math.random() > .12){
+        bubbles.push({
+          x:gridX(r,c),
+          y:gridY(r),
+          row:r,
+          col:c,
+          type:randomType(),
+          stuck:true
+        });
+      }
+    }
+  }
+
+  createShooter();
+  updateHud();
+}
+
+function createShooter(){
+  shooter = {
+    x:W/2,
+    y:H-95,
+    vx:0,
+    vy:0,
+    moving:false,
+    type:randomType()
+  };
+  nextLabelEl.textContent = types[shooter.type].name;
+}
+
+function updateHud(){
+  scoreEl.textContent = score;
+}
+
+function drawBackground(){
+  const grad = ctx.createLinearGradient(0,0,W,H);
+  grad.addColorStop(0,"#ffd6ec");
+  grad.addColorStop(.5,"#d7f3ff");
+  grad.addColorStop(1,"#e8ddff");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+
+  for(let i=0;i<30;i++){
+    ctx.globalAlpha = .18;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc((i*97)%W, (i*151)%H, 18+(i%5)*7, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBubble(b){
+  const t = types[b.type];
+
+  ctx.save();
+  ctx.shadowColor = t.color;
+  ctx.shadowBlur = 18;
+
+  const g = ctx.createRadialGradient(b.x-10,b.y-10,5,b.x,b.y,R);
+  g.addColorStop(0,"#ffffff");
+  g.addColorStop(.35,t.color);
+  g.addColorStop(1,"#7f5cc9");
+
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(b.x,b.y,R,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(255,255,255,.55)";
+  ctx.beginPath();
+  ctx.arc(b.x-9,b.y-10,8,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.font = "22px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(t.icon,b.x,b.y-2);
+
+  ctx.font = "9px Arial";
+  ctx.fillStyle = "#4d3570";
+  ctx.fillText(t.name,b.x,b.y+22);
+
+  ctx.restore();
+}
+
+function drawShooter(){
+  ctx.strokeStyle = "rgba(91,59,121,.45)";
+  ctx.lineWidth = 4;
+  ctx.setLineDash([10,10]);
+
+  ctx.beginPath();
+  ctx.moveTo(shooter.x, shooter.y);
+
+  const dx = aim.x - shooter.x;
+  const dy = aim.y - shooter.y;
+  const len = Math.hypot(dx,dy);
+  const nx = dx/len;
+  const ny = dy/len;
+
+  ctx.lineTo(shooter.x + nx*120, shooter.y + ny*120);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  drawBubble(shooter);
+
+  ctx.fillStyle = "#fff";
+  ctx.font = "18px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("🚀", shooter.x, shooter.y+55);
+}
+
+function shoot(){
+  if(shooter.moving) return;
+
+  const dx = aim.x - shooter.x;
+  const dy = aim.y - shooter.y;
+
+  if(dy > -20) return;
+
+  const len = Math.hypot(dx,dy);
+  const speed = 11;
+
+  shooter.vx = dx/len * speed;
+  shooter.vy = dy/len * speed;
+  shooter.moving = true;
+}
+
+function updateShooter(){
+  if(!shooter.moving) return;
+
+  shooter.x += shooter.vx;
+  shooter.y += shooter.vy;
+
+  if(shooter.x < R || shooter.x > W-R){
+    shooter.vx *= -1;
+  }
+
+  if(shooter.y < startY){
+    stickBubble();
+  }
+
+  for(const b of bubbles){
+    const d = Math.hypot(shooter.x-b.x, shooter.y-b.y);
+    if(d < R*2-3){
+      stickBubble();
+      break;
+    }
+  }
+}
+
+function stickBubble(){
+  shooter.moving = false;
+
+  const nearest = getNearestGrid(shooter.x, shooter.y);
+
+  shooter.x = nearest.x;
+  shooter.y = nearest.y;
+  shooter.row = nearest.row;
+  shooter.col = nearest.col;
+  shooter.stuck = true;
+
+  bubbles.push({...shooter});
+
+  const cluster = findCluster(shooter);
+
+  if(cluster.length >= 3){
+    popCluster(cluster);
+    score += cluster.length * 10;
+    updateHud();
+  }
+
+  createShooter();
+}
+
+function getNearestGrid(x,y){
+  let best = null;
+  let bestD = Infinity;
+
+  for(let r=0;r<15;r++){
+    for(let c=0;c<COLS;c++){
+      const gx = gridX(r,c);
+      const gy = gridY(r);
+      const d = Math.hypot(x-gx,y-gy);
+
+      if(d < bestD){
+        bestD = d;
+        best = {x:gx,y:gy,row:r,col:c};
+      }
+    }
+  }
+  return best;
+}
+
+function neighbors(b){
+  return bubbles.filter(o=>{
+    if(o===b) return false;
+    return Math.hypot(o.x-b.x,o.y-b.y) < R*2.25;
+  });
+}
+
+function findCluster(start){
+  const visited = new Set();
+  const stack = [start];
+  const cluster = [];
+
+  while(stack.length){
+    const b = stack.pop();
+    if(visited.has(b)) continue;
+
+    visited.add(b);
+    cluster.push(b);
+
+    for(const n of neighbors(b)){
+      if(n.type === start.type && !visited.has(n)){
+        stack.push(n);
+      }
+    }
+  }
+
+  return cluster;
+}
+
+function popCluster(cluster){
+  for(const b of cluster){
+    for(let i=0;i<12;i++){
+      particles.push({
+        x:b.x,
+        y:b.y,
+        vx:(Math.random()-.5)*6,
+        vy:(Math.random()-.5)*6,
+        life:35,
+        color:types[b.type].color
+      });
+    }
+  }
+
+  bubbles = bubbles.filter(b => !cluster.includes(b));
+
+  showCuriosity(cluster[0].type);
+}
+
+function showCuriosity(type){
+  const facts = {
+    0:"Ovários produzem óvulos e hormônios como estrogênio e progesterona.",
+    1:"O útero prepara o endométrio para uma possível gestação.",
+    2:"Os testículos produzem espermatozoides e testosterona.",
+    3:"O espermatozoide é uma célula pequena, móvel e especializada.",
+    4:"O óvulo é o maior gameta humano.",
+    5:"Hormônios coordenam o ciclo reprodutivo como uma orquestra biológica."
+  };
+
+  document.getElementById("info").innerHTML =
+    "✨ Curiosidade: " + facts[type];
+}
+
+function updateParticles(){
+  for(const p of particles){
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += .05;
+    p.life--;
+  }
+  particles = particles.filter(p=>p.life>0);
+}
+
+function drawParticles(){
+  for(const p of particles){
+    ctx.globalAlpha = p.life/35;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,5,0,Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function gameOverCheck(){
+  for(const b of bubbles){
+    if(b.y > H-170){
+      ctx.fillStyle = "rgba(255,255,255,.88)";
+      ctx.fillRect(0,0,W,H);
+
+      ctx.fillStyle = "#7a3fa0";
+      ctx.font = "bold 34px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("Fim de jogo!", W/2, H/2-30);
+
+      ctx.font = "20px Arial";
+      ctx.fillText("Você aprendeu muito sobre o sistema reprodutor 💖", W/2, H/2+10);
+
+      ctx.font = "18px Arial";
+      ctx.fillText("Clique em Reiniciar para jogar de novo.", W/2, H/2+45);
+
+      return true;
+    }
+  }
+  return false;
+}
+
+function loop(){
+  drawBackground();
+
+  for(const b of bubbles) drawBubble(b);
+
+  updateShooter();
+  drawShooter();
+
+  updateParticles();
+  drawParticles();
+
+  if(!gameOverCheck()){
+    requestAnimationFrame(loop);
+  }
+}
+
+function restart(){
+  init();
+  loop();
+}
+
+canvas.addEventListener("mousemove", e=>{
+  aim.x = e.clientX;
+  aim.y = e.clientY;
+});
+
+canvas.addEventListener("touchmove", e=>{
+  const t = e.touches[0];
+  aim.x = t.clientX;
+  aim.y = t.clientY;
+});
+
+canvas.addEventListener("click", shoot);
+canvas.addEventListener("touchend", shoot);
+
+init();
+loop();
+</script>
+</body>
+</html>
